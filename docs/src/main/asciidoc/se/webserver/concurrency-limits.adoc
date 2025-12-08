@@ -150,6 +150,7 @@ For more information about configuring these Concurrency Limit
 strategies see:
 
 - xref:{rootdir}/config/io_helidon_common_concurrency_limits_FixedLimit.adoc[FixedLimit]
+- xref:{rootdir}/config/io_helidon_common_concurrency_limits_ThroughputLimit.adoc[ThroughputLimit]
 - xref:{rootdir}/config/io_helidon_common_concurrency_limits_AimdLimit.adoc[AimdLimit]
 
 == Metrics
