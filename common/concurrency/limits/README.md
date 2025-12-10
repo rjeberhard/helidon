@@ -15,6 +15,8 @@ Current usage: `helidon-webserver`
 The weight is not significant (unless you want to override an implementation using your own Limit with a higher weight), as the usages in Helidon use a single (optional) implementation that must be correctly typed in 
 configuration.
 
+// RJE - HERE
+
 # Fixed concurrency limit
 
 The fixed concurrency limit is based on a semaphore behavior. 
@@ -28,7 +30,7 @@ The fixed limit also provides support for defining a queue. If set to a value ab
 Defaults are:
 - `permits: 0` - unlimited permits (no limit)
 - `queue-length: 0` - no queuing
-- `queue-timeout: PT1S` - 1 second timout in queue, if queuing is enabled
+- `queue-timeout: PT1S` - 1 second timeout in queue, if queuing is enabled
 
 # AIMD concurrency limit
 

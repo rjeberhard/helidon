@@ -35,6 +35,7 @@ import io.helidon.metrics.api.MetricsFactory;
 import io.helidon.metrics.api.Tag;
 import io.helidon.metrics.api.Timer;
 
+import static io.helidon.common.concurrency.limits.ThroughputLimitConfigBlueprint.TOKEN_BUCKET;
 import static io.helidon.metrics.api.Meter.Scope.VENDOR;
 
 /**
@@ -367,7 +368,11 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
     }
 
     private PermitStrategy initializePermitStrategy() {
-        return new TokenBucketPermitStrategy();
+        Optional<String> rateLimitingAlgorithm = config.rateLimitingAlgorithm();
+        if (rateLimitingAlgorithm.isEmpty() || TOKEN_BUCKET.equals(rateLimitingAlgorithm.get())) {
+            return new TokenBucketPermitStrategy();
+        }
+        throw new IllegalArgumentException();
     }
 
     private interface PermitStrategy {
@@ -381,7 +386,7 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
         private final AtomicLong lastRefill = new AtomicLong();
 
         TokenBucketPermitStrategy() {
-            this.nanosPerToken = config.duration().toNanos() / config.amount();
+            this.nanosPerToken = config.amount() > 0 ? config.duration().toNanos() / config.amount() : 0;
         }
 
         public Semaphore initializePermits() {
@@ -416,27 +421,18 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
 
         @Override
         public void dropped() {
-            try {
-                updateMetrics(startTime, clock.get());
-            } finally {
-                semaphore.release();
-            }
+            updateMetrics(startTime, clock.get());
         }
 
         @Override
         public void ignore() {
             concurrentRequests.decrementAndGet();
-            semaphore.release();
         }
 
         @Override
         public void success() {
-            try {
-                updateMetrics(startTime, clock.get());
-                concurrentRequests.decrementAndGet();
-            } finally {
-                semaphore.release();
-            }
+            updateMetrics(startTime, clock.get());
+            concurrentRequests.decrementAndGet();
         }
     }
 }

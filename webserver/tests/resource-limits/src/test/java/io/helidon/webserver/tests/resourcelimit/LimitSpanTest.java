@@ -83,6 +83,8 @@ class LimitSpanTest {
         TestSpanExporterProvider.exporter().close();
     }
 
+    // RJE -- HERE
+
     @SetUpServer
     static void setupServer(WebServerConfig.Builder builder) {
         String configText = """

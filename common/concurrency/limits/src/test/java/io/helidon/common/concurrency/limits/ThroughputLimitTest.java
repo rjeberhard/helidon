@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -34,9 +35,12 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
 public class ThroughputLimitTest {
+
+    // RJE -- HERE
+
     @Test
     public void testUnlimited() throws InterruptedException {
-        FixedLimit limiter = FixedLimit.create();
+        ThroughputLimit limiter = ThroughputLimit.create();
         int concurrency = 5;
         CountDownLatch cdl = new CountDownLatch(1);
         CountDownLatch threadsCdl = new CountDownLatch(concurrency);
@@ -79,8 +83,9 @@ public class ThroughputLimitTest {
 
     @Test
     public void testLimit() throws Exception {
-        FixedLimit limiter = FixedLimit.builder()
-                .permits(1)
+        ThroughputLimit limiter = ThroughputLimit.builder()
+                .amount(1)
+                .duration(Duration.ofSeconds(1))
                 .build();
 
         int concurrency = 5;
@@ -132,8 +137,9 @@ public class ThroughputLimitTest {
 
     @Test
     public void testLimitWithQueue() throws Exception {
-        FixedLimit limiter = FixedLimit.builder()
-                .permits(1)
+        ThroughputLimit limiter = ThroughputLimit.builder()
+                .amount(1)
+                .duration(Duration.ofSeconds(1))
                 .queueLength(1)
                 .queueTimeout(Duration.ofSeconds(5))
                 .build();
@@ -185,8 +191,8 @@ public class ThroughputLimitTest {
 
     @Test
     public void testSemaphoreReleased() throws Exception {
-        Limit limit = FixedLimit.builder()
-                .permits(5)
+        Limit limit = ThroughputLimit.builder()
+                .amount(5)
                 .build();
 
         for (int i = 0; i < 5000; i++) {
@@ -197,8 +203,8 @@ public class ThroughputLimitTest {
 
     @Test
     public void testSemaphoreReleasedWithQueue() throws Exception {
-        Limit limit = FixedLimit.builder()
-                .permits(5)
+        Limit limit = ThroughputLimit.builder()
+                .amount(5)
                 .queueLength(10)
                 .queueTimeout(Duration.ofMillis(100))
                 .build();
@@ -211,8 +217,8 @@ public class ThroughputLimitTest {
 
     @Test
     public void testSemaphoreReleasedWithToken() {
-        Limit limit = FixedLimit.builder()
-                .permits(5)
+        Limit limit = ThroughputLimit.builder()
+                .amount(5)
                 .queueLength(10)
                 .queueTimeout(Duration.ofMillis(100))
                 .build();
@@ -221,6 +227,33 @@ public class ThroughputLimitTest {
             Optional<LimitAlgorithm.Token> token = limit.tryAcquire();
             assertThat(token, not(Optional.empty()));
             token.get().success();
+        }
+    }
+
+    @Test
+    public void testStillThinking() throws Exception {
+        TestNanoClock clock = new TestNanoClock();
+
+        Limit limit = ThroughputLimit.builder()
+            .amount(5)
+            .clock(clock::getNanos)
+            .build();
+
+        for (int i = 0; i < 5000; i++) {
+            limit.invoke(() -> {
+            });
+        }
+    }
+
+    private static class TestNanoClock {
+        private final AtomicLong nanos = new AtomicLong(System.nanoTime());
+
+        public long getNanos() {
+            return nanos.get();
+        }
+
+        public void advance(Duration duration) {
+            nanos.addAndGet(duration.toNanos());
         }
     }
 }

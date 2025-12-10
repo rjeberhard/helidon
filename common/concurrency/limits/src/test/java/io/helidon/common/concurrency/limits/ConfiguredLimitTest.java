@@ -70,4 +70,22 @@ public class ConfiguredLimitTest {
         assertThat("Initial limit", prototype.initialLimit(), is(14));
         assertThat("Backoff ratio", prototype.backoffRatio(), is(0.74));
     }
+
+    @Test
+    public void testThroughput() {
+        LimitUsingConfig limitConfig = LimitUsingConfig.create(config.get("third"));
+        Optional<Limit> configuredLimit = limitConfig.concurrencyLimit();
+        assertThat(configuredLimit, not(Optional.empty()));
+        Limit limit = configuredLimit.get();
+
+        assertThat(limit.name(), is("throughput"));
+        assertThat(limit.type(), is("throughput"));
+
+        ThroughputLimitConfig prototype = ((ThroughputLimit) limit).prototype();
+        assertThat("RLA present", prototype.rateLimitingAlgorithm().isPresent(), is(true));
+        assertThat("RLA value", prototype.rateLimitingAlgorithm().get(), is("token-bucket"));
+        assertThat("Amount", prototype.amount(), is(500));
+        assertThat("Duration", prototype.duration(), is(Duration.ofSeconds(5)));
+    }
+
 }
