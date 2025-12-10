@@ -102,7 +102,9 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
                 queueLength,
                 config.queueTimeout(),
                 () -> new ThroughputLimit.ThroughputToken(clock,
-                    concurrentRequests));
+                    concurrentRequests),
+                0,
+                permitStrategy::refillPermits);
         }
     }
 
