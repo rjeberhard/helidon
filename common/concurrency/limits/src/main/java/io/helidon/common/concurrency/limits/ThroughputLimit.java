@@ -22,6 +22,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -69,6 +70,7 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
 
     private final ThroughputLimitConfig config;
     private final LimitHandlers.LimiterHandler handler;
+    private final PermitStrategy permitStrategy;
     private final int initialPermits;
     private final Semaphore semaphore;
     private final Supplier<Long> clock;
@@ -86,14 +88,14 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
         this.concurrentRequests = new AtomicInteger();
         this.rejectedRequests = new AtomicInteger();
         this.clock = config.clock().orElseGet(() -> System::nanoTime);
+        this.permitStrategy = initializePermitStrategy();
 
-        if (config.amount() == 0 && config.semaphore().isEmpty()) {
-            this.semaphore = null;
+        this.semaphore = permitStrategy.initializePermits();
+        if (semaphore == null) {
             this.initialPermits = 0;
             this.queueLength = 0;
             this.handler = new LimitHandlers.NoOpSemaphoreHandler();
         } else {
-            this.semaphore = config.semaphore().orElseGet(() -> new Semaphore(config.amount(), config.fair()));
             this.initialPermits = semaphore.availablePermits();
             this.queueLength = Math.max(0, config.queueLength());
             this.handler = new LimitHandlers.QueuedSemaphoreHandler(semaphore,
@@ -359,6 +361,46 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
             }
         } else {
             throw new LimitException("No more permits available for the semaphore");
+        }
+    }
+
+    private PermitStrategy initializePermitStrategy() {
+        return new TokenBucketPermitStrategy();
+    }
+
+    private interface PermitStrategy {
+        Semaphore initializePermits();
+
+        void refillPermits();
+    }
+
+    private class TokenBucketPermitStrategy implements PermitStrategy {
+        private final long nanosPerToken;
+        private final AtomicLong lastRefill = new AtomicLong();
+
+        TokenBucketPermitStrategy() {
+            this.nanosPerToken = config.duration().toNanos() / config.amount();
+        }
+
+        public Semaphore initializePermits() {
+            if (config.amount() == 0 && config.semaphore().isEmpty()) {
+                return null;
+            } else {
+                lastRefill.set(clock.get());
+                return config.semaphore().orElseGet(() -> new Semaphore(config.amount(), config.fair()));
+            }
+        }
+
+        public void refillPermits() {
+            int newTokens = (int) ((clock.get() - lastRefill.get()) / nanosPerToken);
+            if (newTokens > 0) {
+                int permitsToRefill = Math.min(newTokens, config.amount() - semaphore.availablePermits());
+                if (permitsToRefill > 0) {
+                    semaphore.release(permitsToRefill);
+                    // Set last refill time to time when most recent token was generated
+                    lastRefill.getAndUpdate(t -> t + (permitsToRefill * nanosPerToken));
+                }
+            }
         }
     }
 
