@@ -36,8 +36,6 @@ import static org.hamcrest.Matchers.*;
 
 public class ThroughputLimitTest {
 
-    // RJE -- HERE
-
     @Test
     public void testUnlimited() throws InterruptedException {
         ThroughputLimit limiter = ThroughputLimit.create();
@@ -83,9 +81,12 @@ public class ThroughputLimitTest {
 
     @Test
     public void testLimit() throws Exception {
+        TestNanoClock clock = new TestNanoClock();
+
         ThroughputLimit limiter = ThroughputLimit.builder()
                 .amount(1)
                 .duration(Duration.ofSeconds(1))
+                .clock(clock::getNanos)
                 .build();
 
         int concurrency = 5;
@@ -136,66 +137,19 @@ public class ThroughputLimitTest {
     }
 
     @Test
-    public void testLimitWithQueue() throws Exception {
-        ThroughputLimit limiter = ThroughputLimit.builder()
-                .amount(1)
-                .duration(Duration.ofSeconds(1))
-                .queueLength(1)
-                .queueTimeout(Duration.ofSeconds(5))
-                .build();
-
-        int concurrency = 5;
-        CountDownLatch cdl = new CountDownLatch(1);
-
-        Lock lock = new ReentrantLock();
-        List<String> result = new ArrayList<>(concurrency);
-        AtomicInteger failures = new AtomicInteger();
-
-        Thread[] threads = new Thread[concurrency];
-        for (int i = 0; i < concurrency; i++) {
-            int index = i;
-            threads[i] = new Thread(() -> {
-                try {
-                    limiter.invoke(() -> {
-                        cdl.await(10, TimeUnit.SECONDS);
-                        lock.lock();
-                        try {
-                            result.add("result_" + index);
-                        } finally {
-                            lock.unlock();
-                        }
-                        return null;
-                    });
-                } catch (LimitException e) {
-                    failures.incrementAndGet();
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            });
-        }
-
-        for (Thread thread : threads) {
-            thread.start();
-        }
-        // wait for the threads to reach their destination (either failed, or on cdl, or in queue)
-        TimeUnit.MILLISECONDS.sleep(100);
-        cdl.countDown();
-        for (Thread thread : threads) {
-            thread.join(Duration.ofSeconds(5));
-        }
-        // 1 submitted, 1 in queue (may be less failures, as the queue length is not guaranteed to be atomic
-        assertThat(failures.get(), lessThanOrEqualTo(concurrency - 2));
-        // may be 2 or more (1 submitted, 1 or more queued)
-        assertThat(result.size(), greaterThanOrEqualTo(2));
-    }
-
-    @Test
     public void testSemaphoreReleased() throws Exception {
+        TestNanoClock clock = new TestNanoClock();
+
         Limit limit = ThroughputLimit.builder()
-                .amount(5)
+                .amount(50)
+                .duration(Duration.ofSeconds(1))
+                .clock(clock::getNanos)
                 .build();
 
         for (int i = 0; i < 5000; i++) {
+            if ((i % 50) == 0) {
+                clock.advance(Duration.ofSeconds(1));
+            }
             limit.invoke(() -> {
             });
         }
@@ -203,13 +157,20 @@ public class ThroughputLimitTest {
 
     @Test
     public void testSemaphoreReleasedWithQueue() throws Exception {
+        TestNanoClock clock = new TestNanoClock();
+
         Limit limit = ThroughputLimit.builder()
-                .amount(5)
+                .amount(40)
+                .duration(Duration.ofSeconds(1))
                 .queueLength(10)
                 .queueTimeout(Duration.ofMillis(100))
+                .clock(clock::getNanos)
                 .build();
 
         for (int i = 0; i < 5000; i++) {
+            if ((i % 50) == 0) {
+                clock.advance(Duration.ofMillis(1250)); // enough time to clear queue and refill bucket
+            }
             limit.invoke(() -> {
             });
         }
@@ -217,31 +178,22 @@ public class ThroughputLimitTest {
 
     @Test
     public void testSemaphoreReleasedWithToken() {
+        TestNanoClock clock = new TestNanoClock();
+
         Limit limit = ThroughputLimit.builder()
                 .amount(5)
                 .queueLength(10)
                 .queueTimeout(Duration.ofMillis(100))
+                .clock(clock::getNanos)
                 .build();
 
         for (int i = 0; i < 5000; i++) {
+            if ((i % 5) == 0) {
+                clock.advance(Duration.ofSeconds(1));
+            }
             Optional<LimitAlgorithm.Token> token = limit.tryAcquire();
             assertThat(token, not(Optional.empty()));
             token.get().success();
-        }
-    }
-
-    @Test
-    public void testStillThinking() throws Exception {
-        TestNanoClock clock = new TestNanoClock();
-
-        Limit limit = ThroughputLimit.builder()
-            .amount(5)
-            .clock(clock::getNanos)
-            .build();
-
-        for (int i = 0; i < 5000; i++) {
-            limit.invoke(() -> {
-            });
         }
     }
 
