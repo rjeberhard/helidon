@@ -35,6 +35,7 @@ import io.helidon.metrics.api.MetricsFactory;
 import io.helidon.metrics.api.Tag;
 import io.helidon.metrics.api.Timer;
 
+import static io.helidon.common.concurrency.limits.ThroughputLimitConfigBlueprint.FIXED_RATE;
 import static io.helidon.common.concurrency.limits.ThroughputLimitConfigBlueprint.TOKEN_BUCKET;
 import static io.helidon.metrics.api.Meter.Scope.VENDOR;
 
@@ -368,11 +369,11 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
     }
 
     private PermitStrategy initializePermitStrategy() {
-        Optional<String> rateLimitingAlgorithm = config.rateLimitingAlgorithm();
-        if (rateLimitingAlgorithm.isEmpty() || TOKEN_BUCKET.equals(rateLimitingAlgorithm.get())) {
-            return new TokenBucketPermitStrategy();
-        }
-        throw new IllegalArgumentException();
+        return switch (config.rateLimitingAlgorithm().orElse(TOKEN_BUCKET)) {
+            case FIXED_RATE -> new FixedRatePermitStrategy();
+            case TOKEN_BUCKET -> new TokenBucketPermitStrategy();
+            default -> throw new IllegalArgumentException();
+        };
     }
 
     private interface PermitStrategy {
@@ -383,7 +384,7 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
 
     private class TokenBucketPermitStrategy implements PermitStrategy {
         private final long nanosPerToken;
-        private final AtomicLong lastRefill = new AtomicLong();
+        private final AtomicLong lastRefillTimeNanos = new AtomicLong();
 
         TokenBucketPermitStrategy() {
             this.nanosPerToken = config.amount() > 0 ? config.duration().toNanos() / config.amount() : 0;
@@ -393,21 +394,50 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
             if (config.amount() == 0 && config.semaphore().isEmpty()) {
                 return null;
             } else {
-                lastRefill.set(clock.get());
+                lastRefillTimeNanos.set(clock.get());
                 return config.semaphore().orElseGet(() -> new Semaphore(config.amount(), config.fair()));
             }
         }
 
         public void refillPermits() {
-            int newTokens = (int) ((clock.get() - lastRefill.get()) / nanosPerToken);
+            int newTokens = (int) ((clock.get() - lastRefillTimeNanos.get()) / nanosPerToken);
             if (newTokens > 0) {
                 int permitsToRefill = Math.min(newTokens, config.amount() - semaphore.availablePermits());
                 if (permitsToRefill > 0) {
                     semaphore.release(permitsToRefill);
                     // Set last refill time to time when most recent token was generated
-                    lastRefill.getAndUpdate(t -> t + (permitsToRefill * nanosPerToken));
+                    lastRefillTimeNanos.getAndUpdate(t -> t + (permitsToRefill * nanosPerToken));
                 }
             }
+        }
+    }
+
+    private class FixedRatePermitStrategy implements PermitStrategy {
+        private final long nanosPerRequest;
+        private final AtomicLong lastRequestTimeNanos = new AtomicLong();
+
+        FixedRatePermitStrategy() {
+            this.nanosPerRequest = config.amount() > 0 ? config.duration().toNanos() / config.amount() : 0;
+        }
+
+        @Override
+        public Semaphore initializePermits() {
+            if (config.amount() == 0 && config.semaphore().isEmpty()) {
+                return null;
+            } else {
+                lastRequestTimeNanos.set(clock.get());
+                return config.semaphore().orElseGet(() -> new Semaphore(1, config.fair()));
+            }
+        }
+
+        @Override
+        public void refillPermits() {
+            long now = clock.get();
+            if ((now - lastRequestTimeNanos.get()) > nanosPerRequest && semaphore.availablePermits() <= 0) {
+                semaphore.release();
+                lastRequestTimeNanos.set(now);
+            }
+
         }
     }
 

@@ -17,7 +17,6 @@ package io.helidon.common.concurrency.limits;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.concurrent.Callable;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
