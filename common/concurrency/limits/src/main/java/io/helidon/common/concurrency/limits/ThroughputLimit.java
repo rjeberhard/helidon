@@ -18,26 +18,15 @@ package io.helidon.common.concurrency.limits;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.Callable;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 import io.helidon.builder.api.RuntimeType;
 import io.helidon.common.config.Config;
-import io.helidon.metrics.api.Gauge;
-import io.helidon.metrics.api.MeterRegistry;
-import io.helidon.metrics.api.Metrics;
-import io.helidon.metrics.api.MetricsFactory;
-import io.helidon.metrics.api.Tag;
-import io.helidon.metrics.api.Timer;
 
 import static io.helidon.common.concurrency.limits.ThroughputLimitConfigBlueprint.FIXED_RATE;
 import static io.helidon.common.concurrency.limits.ThroughputLimitConfigBlueprint.TOKEN_BUCKET;
-import static io.helidon.metrics.api.Meter.Scope.VENDOR;
 
 /**
  * Throughput based limit, that is backed by a semaphore with timeout on the queue.
@@ -46,7 +35,7 @@ import static io.helidon.metrics.api.Meter.Scope.VENDOR;
  * @see io.helidon.common.concurrency.limits.ThroughputLimitConfig
  */
 @SuppressWarnings("removal")
-public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Limit, SemaphoreLimit, RuntimeType.Api<ThroughputLimitConfig> {
+public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.Api<ThroughputLimitConfig> {
 
     /**
      * Default amount, meaning unlimited execution.
@@ -61,7 +50,7 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
     /**
      * Default length of the queue.
      */
-    public static final int DEFAULT_QUEUE_LENGTH = 0;
+    public static final int DEFAULT_QUEUE_LENGTH = SemaphoreLimitBase.DEFAULT_QUEUE_LENGTH;
 
     /**
      * Timeout of a request that is enqueued.
@@ -71,42 +60,22 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
     static final String TYPE = "throughput";
 
     private final ThroughputLimitConfig config;
-    private final LimitHandlers.LimiterHandler handler;
     private final PermitStrategy permitStrategy;
-    private final int initialPermits;
-    private final Semaphore semaphore;
-    private final Supplier<Long> clock;
-    private final AtomicInteger concurrentRequests;
-    private final AtomicInteger rejectedRequests;
-    private final int queueLength;
-
-    private Timer rttTimer;
-    private Timer queueWaitTimer;
-
-    private String originName;
 
     private ThroughputLimit(ThroughputLimitConfig config) {
+        super(config.clock(), config.enableMetrics(), config.name());
         this.config = config;
-        this.concurrentRequests = new AtomicInteger();
-        this.rejectedRequests = new AtomicInteger();
-        this.clock = config.clock().orElseGet(() -> System::nanoTime);
         this.permitStrategy = initializePermitStrategy();
-
         this.semaphore = permitStrategy.initializePermits();
-        if (semaphore == null) {
+        if (this.semaphore == null) {
             this.initialPermits = 0;
             this.queueLength = 0;
             this.handler = new LimitHandlers.NoOpSemaphoreHandler();
         } else {
-            this.initialPermits = semaphore.availablePermits();
+            this.initialPermits = this.semaphore.availablePermits();
             this.queueLength = Math.max(0, config.queueLength());
-            this.handler = new LimitHandlers.QueuedSemaphoreHandler(semaphore,
-                queueLength,
-                config.queueTimeout(),
-                () -> new ThroughputLimit.ThroughputToken(clock,
-                    concurrentRequests),
-                0,
-                permitStrategy::refillPermits);
+            this.handler = new LimitHandlers.QueuedSemaphoreHandler(
+                this.semaphore, this.queueLength, config.queueTimeout(), ThroughputToken::new, 0, permitStrategy::refillPermits);
         }
     }
 
@@ -176,30 +145,6 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
     }
 
     @Override
-    public Outcome tryAcquireOutcome(boolean wait) {
-        return doTryAcquire(wait);
-    }
-
-    @Override
-    public <T> Result<T> call(Callable<T> callable) throws Exception {
-        return doInvoke(callable);
-    }
-
-    @Override
-    public Outcome run(Runnable runnable) throws Exception {
-        return doInvoke(() -> {
-            runnable.run();
-            return null;
-        }).outcome();
-    }
-
-    @SuppressWarnings("removal")
-    @Override
-    public Semaphore semaphore() {
-        return handler.semaphore();
-    }
-
-    @Override
     public ThroughputLimitConfig prototype() {
         return config;
     }
@@ -211,7 +156,7 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
 
     @Override
     public String type() {
-        return ThroughputLimit.TYPE;
+        return TYPE;
     }
 
     @Override
@@ -227,152 +172,11 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
         return config.build();
     }
 
-    /**
-     * Initialize metrics for this limit.
-     *
-     * @param socketName name of socket for which this limit was created
-     */
-    @Override
-    public void init(String socketName) {
-        originName = socketName;
-        if (config.enableMetrics()) {
-            MetricsFactory metricsFactory = MetricsFactory.getInstance();
-            MeterRegistry meterRegistry = Metrics.globalRegistry();
-
-            // define tag if socket is not the default
-            Tag socketNameTag = null;
-            if (!socketName.equals("@default")) {
-                socketNameTag = Tag.create("socketName", socketName);
-            }
-
-            if (semaphore != null) {
-                // actual number of requests queued
-                Gauge.Builder<Integer> queueLengthBuilder = metricsFactory.gaugeBuilder(
-                    config.name() + "_queue_length", semaphore::getQueueLength).scope(VENDOR);
-                if (socketNameTag != null) {
-                    queueLengthBuilder.tags(List.of(socketNameTag));
-                }
-                meterRegistry.getOrCreate(queueLengthBuilder);
-            }
-
-            // count of current requests running
-            Gauge.Builder<Integer> concurrentRequestsBuilder = metricsFactory.gaugeBuilder(
-                config.name() + "_concurrent_requests", concurrentRequests::get).scope(VENDOR);
-            if (socketNameTag != null) {
-                concurrentRequestsBuilder.tags(List.of(socketNameTag));
-            }
-            meterRegistry.getOrCreate(concurrentRequestsBuilder);
-
-            // actual number of requests queued
-            Gauge.Builder<Integer> rejectedRequestsBuilder = metricsFactory.gaugeBuilder(
-                config.name() + "_rejected_requests", rejectedRequests::get).scope(VENDOR);
-            if (socketNameTag != null) {
-                rejectedRequestsBuilder.tags(List.of(socketNameTag));
-            }
-            meterRegistry.getOrCreate(rejectedRequestsBuilder);
-
-            // histogram of round-trip times, excluding any time queued
-            Timer.Builder rttTimerBuilder = metricsFactory.timerBuilder(config.name() + "_rtt")
-                .scope(VENDOR)
-                .baseUnit(Timer.BaseUnits.MILLISECONDS);
-            if (socketNameTag != null) {
-                rttTimerBuilder.tags(List.of(socketNameTag));
-            }
-            rttTimer = meterRegistry.getOrCreate(rttTimerBuilder);
-
-            // histogram of wait times for a permit in queue
-            Timer.Builder waitTimerBuilder = metricsFactory.timerBuilder(config.name() + "_queue_wait_time")
-                .scope(VENDOR)
-                .baseUnit(Timer.BaseUnits.MILLISECONDS);
-            if (socketNameTag != null) {
-                waitTimerBuilder.tags(List.of(socketNameTag));
-            }
-            queueWaitTimer = meterRegistry.getOrCreate(waitTimerBuilder);
-        }
-    }
-
-    void updateMetrics(long startTime, long endTime) {
-        long rtt = endTime - startTime;
-        if (rttTimer != null) {
-            rttTimer.record(rtt, TimeUnit.NANOSECONDS);
-        }
-    }
-
-    // Remove when we retire the obsolete methods on LimitAlgorithm in 5.0.
-    @Deprecated(since = "4.3.0", forRemoval = true)
-    @Override
-    Outcome doTryAcquireObs(boolean wait) {
-        return doTryAcquire(wait);
-    }
-
-    @Deprecated(since = "4.3.0", forRemoval = true)
-    @Override
-    <T> Result<T> doInvokeObs(Callable<T> callable) throws Exception {
-        return doInvoke(callable);
-    }
-
-    private Outcome doTryAcquire(boolean wait) {
-
-        Optional<LimitAlgorithm.Token> token = handler.tryAcquireToken(false);
-
-        if (token.isPresent()) {
-            return Outcome.immediateAcceptance(originName, TYPE, token.get());
-
-        }
-        if (wait && queueLength > 0) {
-            long startWait = clock.get();
-            token = handler.tryAcquireToken(true);
-            long endWait = clock.get();
-            if (token.isPresent()) {
-                if (queueWaitTimer != null) {
-                    queueWaitTimer.record(endWait - startWait, TimeUnit.NANOSECONDS);
-                }
-                return Outcome.deferredAcceptance(originName,
-                    TYPE,
-                    token.get(),
-                    startWait,
-                    endWait);
-            }
-            return Outcome.deferredRejection(originName, TYPE, startWait, endWait);
-        }
-        rejectedRequests.getAndIncrement();
-        return Outcome.immediateRejection(originName, TYPE);
-    }
-
-    private <T> Result<T> doInvoke(Callable<T> callable)
-        throws Exception {
-
-        Outcome outcome = doTryAcquire(true);
-        if (outcome instanceof Outcome.Accepted accepted) {
-            LimitAlgorithm.Token token = accepted.token();
-            try {
-                concurrentRequests.getAndIncrement();
-                long startTime = clock.get();
-                T response = callable.call();
-                if (rttTimer != null) {
-                    rttTimer.record(clock.get() - startTime, TimeUnit.NANOSECONDS);
-                }
-                token.success();
-                return Result.create(response, outcome);
-            } catch (IgnoreTaskException e) {
-                token.ignore();
-                return Result.create(e.handle(), outcome);
-            } catch (Throwable e) {
-                token.dropped();
-                throw e;
-            } finally {
-                concurrentRequests.getAndDecrement();
-            }
-        } else {
-            throw new LimitException("No more permits available for the semaphore");
-        }
-    }
-
     private PermitStrategy initializePermitStrategy() {
         return switch (config.rateLimitingAlgorithm().orElse(TOKEN_BUCKET)) {
             case FIXED_RATE -> new FixedRatePermitStrategy();
             case TOKEN_BUCKET -> new TokenBucketPermitStrategy();
-            default -> throw new IllegalArgumentException();
+            default -> throw new IllegalArgumentException("Unknown rate limiting algorithm: " + config.rateLimitingAlgorithm());
         };
     }
 
@@ -390,6 +194,7 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
             this.nanosPerToken = config.amount() > 0 ? config.duration().toNanos() / config.amount() : 0;
         }
 
+        @Override
         public Semaphore initializePermits() {
             if (config.amount() == 0 && config.semaphore().isEmpty()) {
                 return null;
@@ -399,6 +204,7 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
             }
         }
 
+        @Override
         public void refillPermits() {
             int newTokens = (int) ((clock.get() - lastRefillTimeNanos.get()) / nanosPerToken);
             if (newTokens > 0) {
@@ -437,15 +243,13 @@ public class ThroughputLimit extends LimitAlgorithmDeprecatedBase implements Lim
                 semaphore.release();
                 lastRequestTimeNanos.set(now);
             }
-
         }
     }
 
-    private class ThroughputToken implements Token {
-        private final long startTime;
+    private class ThroughputToken implements LimitAlgorithm.Token {
+        private final long startTime = clock.get();
 
-        private ThroughputToken(Supplier<Long> clock, AtomicInteger concurrentRequests) {
-            startTime = clock.get();
+        ThroughputToken() {
             concurrentRequests.incrementAndGet();
         }
 
