@@ -46,6 +46,7 @@ import io.helidon.common.LazyValue;
 import io.helidon.common.concurrency.limits.FixedLimit;
 import io.helidon.common.concurrency.limits.Limit;
 import io.helidon.common.concurrency.limits.NoopSemaphore;
+import io.helidon.common.concurrency.limits.ThroughputLimit;
 import io.helidon.common.context.Context;
 import io.helidon.common.socket.SocketOptions;
 import io.helidon.common.task.HelidonTaskExecutor;
@@ -124,8 +125,14 @@ class ServerListener implements ListenerContext {
                 : new Semaphore(listenerConfig.maxTcpConnections());
 
         if (listenerConfig.maxConcurrentRequests() == -1) {
-            this.requestLimit = listenerConfig.concurrencyLimit()
+            if (listenerConfig.maxRequestsPerSecond() == -1) {
+                this.requestLimit = listenerConfig.concurrencyLimit()
                     .orElseGet(FixedLimit::create); // unlimited unless configured
+            } else {
+                this.requestLimit = ThroughputLimit.builder()
+                    .amount(listenerConfig.maxRequestsPerSecond())
+                    .build();
+            }
         } else {
             this.requestLimit = FixedLimit.builder()
                     .permits(listenerConfig.maxConcurrentRequests())

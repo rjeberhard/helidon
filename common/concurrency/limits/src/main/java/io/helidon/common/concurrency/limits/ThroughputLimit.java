@@ -16,8 +16,6 @@
 
 package io.helidon.common.concurrency.limits;
 
-import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;

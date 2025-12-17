@@ -24,7 +24,7 @@ import io.helidon.common.config.Config;
  * {@link java.util.ServiceLoader} service provider for {@link ThroughputLimit}
  * limit implementation.
  */
-@Weight(90)
+@Weight(85)
 public class ThroughputLimitProvider implements LimitProvider {
     /**
      * Constructor required by the service loader.
