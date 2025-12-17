@@ -73,7 +73,8 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
             setInitialPermits(getSemaphore().availablePermits());
             setQueueLength(Math.max(0, config.queueLength()));
             setHandler(new LimitHandlers.QueuedSemaphoreHandler(
-                getSemaphore(), getQueueLength(), config.queueTimeout(), ThroughputToken::new, 0, permitStrategy::refillPermits));
+                getSemaphore(), getQueueLength(), config.queueTimeout(),
+                ThroughputToken::new, permitStrategy.maxWaitMillis(), permitStrategy::refillPermits));
         }
     }
 
@@ -181,6 +182,8 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
     private interface PermitStrategy {
         Semaphore initializePermits();
 
+        long maxWaitMillis();
+
         void refillPermits();
     }
 
@@ -203,14 +206,20 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
         }
 
         @Override
+        public long maxWaitMillis() {
+            return nanosPerToken / 1000000L;
+        }
+
+        @Override
         public void refillPermits() {
-            int newTokens = (int) ((getClock().get() - lastRefillTimeNanos.get()) / nanosPerToken);
+            long lastRefillTime = lastRefillTimeNanos.get();
+            int newTokens = (int) ((getClock().get() - lastRefillTime) / nanosPerToken);
             if (newTokens > 0) {
                 int permitsToRefill = Math.min(newTokens, config.amount() - getSemaphore().availablePermits());
-                if (permitsToRefill > 0) {
+                if (permitsToRefill > 0 && lastRefillTimeNanos.compareAndSet(
+                    lastRefillTime, lastRefillTime + (permitsToRefill * nanosPerToken))) {
+                    // Last refill time has been set to time when most recent token was generated
                     getSemaphore().release(permitsToRefill);
-                    // Set last refill time to time when most recent token was generated
-                    lastRefillTimeNanos.getAndUpdate(t -> t + (permitsToRefill * nanosPerToken));
                 }
             }
         }
@@ -235,11 +244,18 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
         }
 
         @Override
+        public long maxWaitMillis() {
+            return nanosPerRequest / 1000000L;
+        }
+
+        @Override
         public void refillPermits() {
             long now = getClock().get();
-            if ((now - lastRequestTimeNanos.get()) > nanosPerRequest && getSemaphore().availablePermits() <= 0) {
+            long lastRequestTime = lastRequestTimeNanos.get();
+            if ((now - lastRequestTime) > nanosPerRequest
+                && getSemaphore().availablePermits() <= 0
+                && lastRequestTimeNanos.compareAndSet(lastRequestTime, now)) {
                 getSemaphore().release();
-                lastRequestTimeNanos.set(now);
             }
         }
     }
