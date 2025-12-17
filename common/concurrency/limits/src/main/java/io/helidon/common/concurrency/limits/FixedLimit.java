@@ -54,16 +54,16 @@ public class FixedLimit extends SemaphoreLimitBase implements RuntimeType.Api<Fi
         super(config.clock(), config.enableMetrics(), config.name());
         this.config = config;
         if (config.permits() == 0 && config.semaphore().isEmpty()) {
-            this.semaphore = null;
-            this.initialPermits = 0;
-            this.queueLength = 0;
-            this.handler = new LimitHandlers.NoOpSemaphoreHandler();
+            setSemaphore(null);
+            setInitialPermits(0);
+            setQueueLength(0);
+            setHandler(new LimitHandlers.NoOpSemaphoreHandler());
         } else {
-            this.semaphore = config.semaphore().orElseGet(() -> new Semaphore(config.permits(), config.fair()));
-            this.initialPermits = this.semaphore.availablePermits();
-            this.queueLength = Math.max(0, config.queueLength());
-            this.handler = new LimitHandlers.QueuedSemaphoreHandler(
-                this.semaphore, this.queueLength, config.queueTimeout(), FixedToken::new);
+            setSemaphore(config.semaphore().orElseGet(() -> new Semaphore(config.permits(), config.fair())));
+            setInitialPermits(getSemaphore().availablePermits());
+            setQueueLength(Math.max(0, config.queueLength()));
+            setHandler(new LimitHandlers.QueuedSemaphoreHandler(
+                getSemaphore(), getQueueLength(), config.queueTimeout(), FixedToken::new));
         }
     }
 
@@ -154,41 +154,41 @@ public class FixedLimit extends SemaphoreLimitBase implements RuntimeType.Api<Fi
 
             return FixedLimitConfig.builder()
                 .from(config)
-                .semaphore(new Semaphore(initialPermits, semaphore.isFair()))
+                .semaphore(new Semaphore(getInitialPermits(), semaphore.isFair()))
                 .build();
         }
         return config.build();
     }
 
     private class FixedToken implements LimitAlgorithm.Token {
-        private final long startTime = clock.get();
+        private final long startTime = getClock().get();
 
         FixedToken() {
-            concurrentRequests.incrementAndGet();
+            getConcurrentRequests().incrementAndGet();
         }
 
         @Override
         public void dropped() {
             try {
-                updateMetrics(startTime, clock.get());
+                updateMetrics(startTime, getClock().get());
             } finally {
-                semaphore.release();
+                getSemaphore().release();
             }
         }
 
         @Override
         public void ignore() {
-            concurrentRequests.decrementAndGet();
-            semaphore.release();
+            getConcurrentRequests().decrementAndGet();
+            getSemaphore().release();
         }
 
         @Override
         public void success() {
             try {
-                updateMetrics(startTime, clock.get());
-                concurrentRequests.decrementAndGet();
+                updateMetrics(startTime, getClock().get());
+                getConcurrentRequests().decrementAndGet();
             } finally {
-                semaphore.release();
+                getSemaphore().release();
             }
         }
     }

@@ -64,16 +64,16 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
         super(config.clock(), config.enableMetrics(), config.name());
         this.config = config;
         this.permitStrategy = initializePermitStrategy();
-        this.semaphore = permitStrategy.initializePermits();
-        if (this.semaphore == null) {
-            this.initialPermits = 0;
-            this.queueLength = 0;
-            this.handler = new LimitHandlers.NoOpSemaphoreHandler();
+        setSemaphore(permitStrategy.initializePermits());
+        if (getSemaphore() == null) {
+            setInitialPermits(0);
+            setQueueLength(0);
+            setHandler(new LimitHandlers.NoOpSemaphoreHandler());
         } else {
-            this.initialPermits = this.semaphore.availablePermits();
-            this.queueLength = Math.max(0, config.queueLength());
-            this.handler = new LimitHandlers.QueuedSemaphoreHandler(
-                this.semaphore, this.queueLength, config.queueTimeout(), ThroughputToken::new, 0, permitStrategy::refillPermits);
+            setInitialPermits(getSemaphore().availablePermits());
+            setQueueLength(Math.max(0, config.queueLength()));
+            setHandler(new LimitHandlers.QueuedSemaphoreHandler(
+                getSemaphore(), getQueueLength(), config.queueTimeout(), ThroughputToken::new, 0, permitStrategy::refillPermits));
         }
     }
 
@@ -164,7 +164,7 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
 
             return ThroughputLimitConfig.builder()
                 .from(config)
-                .semaphore(new Semaphore(initialPermits, semaphore.isFair()))
+                .semaphore(new Semaphore(getInitialPermits(), semaphore.isFair()))
                 .build();
         }
         return config.build();
@@ -197,18 +197,18 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
             if (config.amount() == 0 && config.semaphore().isEmpty()) {
                 return null;
             } else {
-                lastRefillTimeNanos.set(clock.get());
+                lastRefillTimeNanos.set(getClock().get());
                 return config.semaphore().orElseGet(() -> new Semaphore(config.amount(), config.fair()));
             }
         }
 
         @Override
         public void refillPermits() {
-            int newTokens = (int) ((clock.get() - lastRefillTimeNanos.get()) / nanosPerToken);
+            int newTokens = (int) ((getClock().get() - lastRefillTimeNanos.get()) / nanosPerToken);
             if (newTokens > 0) {
-                int permitsToRefill = Math.min(newTokens, config.amount() - semaphore.availablePermits());
+                int permitsToRefill = Math.min(newTokens, config.amount() - getSemaphore().availablePermits());
                 if (permitsToRefill > 0) {
-                    semaphore.release(permitsToRefill);
+                    getSemaphore().release(permitsToRefill);
                     // Set last refill time to time when most recent token was generated
                     lastRefillTimeNanos.getAndUpdate(t -> t + (permitsToRefill * nanosPerToken));
                 }
@@ -229,42 +229,42 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
             if (config.amount() == 0 && config.semaphore().isEmpty()) {
                 return null;
             } else {
-                lastRequestTimeNanos.set(clock.get());
+                lastRequestTimeNanos.set(getClock().get());
                 return config.semaphore().orElseGet(() -> new Semaphore(1, config.fair()));
             }
         }
 
         @Override
         public void refillPermits() {
-            long now = clock.get();
-            if ((now - lastRequestTimeNanos.get()) > nanosPerRequest && semaphore.availablePermits() <= 0) {
-                semaphore.release();
+            long now = getClock().get();
+            if ((now - lastRequestTimeNanos.get()) > nanosPerRequest && getSemaphore().availablePermits() <= 0) {
+                getSemaphore().release();
                 lastRequestTimeNanos.set(now);
             }
         }
     }
 
     private class ThroughputToken implements LimitAlgorithm.Token {
-        private final long startTime = clock.get();
+        private final long startTime = getClock().get();
 
         ThroughputToken() {
-            concurrentRequests.incrementAndGet();
+            getConcurrentRequests().incrementAndGet();
         }
 
         @Override
         public void dropped() {
-            updateMetrics(startTime, clock.get());
+            updateMetrics(startTime, getClock().get());
         }
 
         @Override
         public void ignore() {
-            concurrentRequests.decrementAndGet();
+            getConcurrentRequests().decrementAndGet();
         }
 
         @Override
         public void success() {
-            updateMetrics(startTime, clock.get());
-            concurrentRequests.decrementAndGet();
+            updateMetrics(startTime, getClock().get());
+            getConcurrentRequests().decrementAndGet();
         }
     }
 }

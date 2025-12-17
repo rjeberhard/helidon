@@ -31,8 +31,8 @@ import io.helidon.metrics.api.MetricsFactory;
 import io.helidon.metrics.api.Tag;
 import io.helidon.metrics.api.Timer;
 
-import static io.helidon.metrics.api.Meter.Scope.VENDOR;
 import static io.helidon.common.concurrency.limits.LimitHandlers.LimiterHandler;
+import static io.helidon.metrics.api.Meter.Scope.VENDOR;
 
 /**
  * Base class for semaphore-based limits like FixedLimit and ThroughputLimit.
@@ -42,20 +42,20 @@ abstract class SemaphoreLimitBase extends LimitAlgorithmDeprecatedBase implement
 
     static final int DEFAULT_QUEUE_LENGTH = 0;
 
-    protected LimiterHandler handler;
-    protected int initialPermits;
-    protected Semaphore semaphore;
-    protected final AtomicInteger concurrentRequests;
-    protected final AtomicInteger rejectedRequests;
-    protected final Supplier<Long> clock;
-    protected final boolean enableMetrics;
-    protected final String name;
-    protected int queueLength;
+    private LimiterHandler handler;
+    private int initialPermits;
+    private Semaphore semaphore;
+    private final AtomicInteger concurrentRequests;
+    private final AtomicInteger rejectedRequests;
+    private final Supplier<Long> clock;
+    private final boolean enableMetrics;
+    private final String name;
+    private int queueLength;
 
-    protected Timer rttTimer;
-    protected Timer queueWaitTimer;
+    private Timer rttTimer;
+    private Timer queueWaitTimer;
 
-    protected String originName;
+    private String originName;
 
     /**
      * Constructor initializing common fields.
@@ -153,6 +153,46 @@ abstract class SemaphoreLimitBase extends LimitAlgorithmDeprecatedBase implement
         if (rttTimer != null) {
             rttTimer.record(rtt, TimeUnit.NANOSECONDS);
         }
+    }
+
+    protected void setHandler(LimiterHandler handler) {
+        this.handler = handler;
+    }
+
+    protected int getInitialPermits() {
+        return initialPermits;
+    }
+
+    protected void setInitialPermits(int initialPermits) {
+        this.initialPermits = initialPermits;
+    }
+
+    protected Semaphore getSemaphore() {
+        return semaphore;
+    }
+
+    protected void setSemaphore(Semaphore semaphore) {
+        this.semaphore = semaphore;
+    }
+
+    protected AtomicInteger getConcurrentRequests() {
+        return concurrentRequests;
+    }
+
+    protected Supplier<Long> getClock() {
+        return clock;
+    }
+
+    protected String getName() {
+        return name;
+    }
+
+    protected int getQueueLength() {
+        return queueLength;
+    }
+
+    protected void setQueueLength(int queueLength) {
+        this.queueLength = queueLength;
     }
 
     // Deprecated methods
