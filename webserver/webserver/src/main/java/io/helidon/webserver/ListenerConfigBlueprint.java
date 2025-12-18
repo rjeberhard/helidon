@@ -264,8 +264,8 @@ interface ListenerConfigBlueprint {
      * Also make sure that this number is higher than the expected time it takes to handle a single request in your application,
      * as otherwise you may stop in-progress requests.
      * <p>
-     * Setting this option will always ignore both {@link #concurrencyLimit()} and {@link #maxRequestsPerSecond()},
-     * and will use the {@link io.helidon.common.concurrency.limits.FixedLimit}.
+     * Setting this option will always ignore {@link #concurrencyLimit()} and will use
+     * the {@link io.helidon.common.concurrency.limits.FixedLimit}.
      *
      * @return number of requests that can be processed on this listener, regardless of protocol
      */
@@ -274,24 +274,10 @@ interface ListenerConfigBlueprint {
     int maxConcurrentRequests();
 
     /**
-     * Limits the throughput of requests that can be executed during a one-second interval.
-     * Defaults to {@code -1}, meaning "unlimited" - what the system allows.
-     * <p>
-     * This option is ignored if {@link #concurrencyLimit()} is set and setting this option will always
-     * ignore {@link #concurrencyLimit()} and will use the {@link io.helidon.common.concurrency.limits.ThroughputLimit}.
-     *
-     * @return number of requests that can be processed on this listener, regardless of protocol
-     */
-    @Option.Configured
-    @Option.DefaultInt(-1)
-    int maxRequestsPerSecond();
-
-    /**
      * Concurrency limit to use to limit concurrent execution of incoming requests.
      * The default is to have unlimited concurrency.
      * <p>
-     * Note that if either {@link #maxConcurrentRequests()} or {@link #maxRequestsPerSecond()} is configured,
-     * this is ignored.
+     * Note that if {@link #maxConcurrentRequests()} is configured, this is ignored.
      *
      * @return concurrency limit
      */

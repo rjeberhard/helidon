@@ -164,10 +164,10 @@ with subsequent requests being queued, if space is available, and any request th
 1 second will be rejected. Unlike the fixed concurrency strategy that has a set number of permits, the throughput
 concurrency strategy gains (or "refills") permits as time passes based on the selected rate limiting algorithm.
 There are two rate limiting algorithms available:
-* token-bucket: Permits start at the configured amount and refill up to that amount over the duration. This is the default algorithm.
-* fixed-rate: There is only ever one permit and, if consumed, a new permit is generated at the necessary rate to achieve the configured throughput. This algorithm is also called "leaky bucket". It is very important to configure queuing as this algorithm almost always has a backlog.
+* TOKEN_BUCKET: Permits start at the configured amount and refill up to that amount over the duration. This is the default algorithm.
+* FIXED_RATE: There is only ever one permit and, if consumed, a new permit is generated at the necessary rate to achieve the configured throughput. This algorithm is also called "leaky bucket". It is very important to configure queuing as this algorithm almost always has a backlog.
 
-Here is the same example showing the configuration of the fixed-rate rate limiting algorithm:
+Here is the same example showing the configuration of the `FIXED_RATE` rate limiting algorithm:
 [source,yaml]
 ----
 server:
@@ -175,7 +175,7 @@ server:
     throughput:
       amount: 1000
       duration: PT5S
-      rate-limiting-algorithm: fixed-rate
+      rate-limiting-algorithm: FIXED_RATE
       queue-length: 200
       queue-timeout: PT1S
 ----

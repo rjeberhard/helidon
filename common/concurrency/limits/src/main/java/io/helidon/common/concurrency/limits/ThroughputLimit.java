@@ -16,15 +16,13 @@
 
 package io.helidon.common.concurrency.limits;
 
+import java.util.Optional;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import io.helidon.builder.api.RuntimeType;
 import io.helidon.common.config.Config;
-
-import static io.helidon.common.concurrency.limits.ThroughputLimitConfigBlueprint.FIXED_RATE;
-import static io.helidon.common.concurrency.limits.ThroughputLimitConfigBlueprint.TOKEN_BUCKET;
 
 /**
  * Throughput based limit, that is backed by a semaphore with timeout on the queue.
@@ -172,10 +170,10 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
     }
 
     private PermitStrategy initializePermitStrategy() {
-        return switch (config.rateLimitingAlgorithm().orElse(TOKEN_BUCKET)) {
+        return switch (Optional.ofNullable(config.rateLimitingAlgorithm())
+            .orElse(RateLimitingAlgorithmType.TOKEN_BUCKET)) {
             case FIXED_RATE -> new FixedRatePermitStrategy();
             case TOKEN_BUCKET -> new TokenBucketPermitStrategy();
-            default -> throw new IllegalArgumentException("Unknown rate limiting algorithm: " + config.rateLimitingAlgorithm());
         };
     }
 
@@ -282,5 +280,19 @@ public class ThroughputLimit extends SemaphoreLimitBase implements RuntimeType.A
             updateMetrics(startTime, getClock().get());
             getConcurrentRequests().decrementAndGet();
         }
+    }
+
+    /**
+     * Rate limiting algorithms controlling the generation of tokens for requests.
+     */
+    enum RateLimitingAlgorithmType {
+        /**
+         * Requests require tokens from a bucket that fills over time.
+         */
+        TOKEN_BUCKET,
+        /**
+         * Requests are processed at a fixed rate.
+         */
+        FIXED_RATE
     }
 }

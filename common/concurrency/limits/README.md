@@ -50,6 +50,6 @@ The throughput limit also provides support for defining a queue. If set to a val
 Defaults are:
 - `amount: 0` - unlimited throughput (no limit)
 - `duration: PT1S` - 1 second duration over which to calculate throughput
-- `rate-limiting-algorithm: token-bucket` - tokens (permits) refill to a maximum value of the amount over the duration
+- `rate-limiting-algorithm: TOKEN_BUCKET` - tokens (permits) refill to a maximum value of the amount over the duration
 - `queue-length: 0` - no queuing
 - `queue-timeout: PT1S` - 1 second timeout in queue, if queuing is enabled

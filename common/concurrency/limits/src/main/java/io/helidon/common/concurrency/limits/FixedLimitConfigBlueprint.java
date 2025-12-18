@@ -105,7 +105,7 @@ interface FixedLimitConfigBlueprint extends Prototype.Factory<FixedLimit> {
     Optional<Supplier<Long>> clock();
 
     /**
-     * Whether to collect metrics for the AIMD implementation.
+     * Whether to collect metrics for the fixed limit implementation.
      *
      * @return metrics flag
      */

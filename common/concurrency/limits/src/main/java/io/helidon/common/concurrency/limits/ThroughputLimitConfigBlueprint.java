@@ -32,25 +32,21 @@ import io.helidon.common.concurrency.limits.spi.LimitProvider;
  * @see #duration()
  * @see #queueLength()
  * @see #queueTimeout()
+ * @see #rateLimitingAlgorithm()
  */
 @Prototype.Blueprint
 @Prototype.Configured(value = ThroughputLimit.TYPE, root = false)
 @Prototype.Provides(LimitProvider.class)
 interface ThroughputLimitConfigBlueprint extends Prototype.Factory<ThroughputLimit> {
-    String TOKEN_BUCKET = "token-bucket";
-    String FIXED_RATE = "fixed-rate";
-
     /**
      * The rate limiting algorithm to apply.
      *
+     * Rate limiting algorithm is by default {@link ThroughputLimit.RateLimitingAlgorithmType#TOKEN_BUCKET}.
      * @return the rate limiting algorithm to be applied
      */
     @Option.Configured
-    @Option.AllowedValues({
-        @Option.AllowedValue(value = TOKEN_BUCKET, description = "Requests require tokens from a bucket that fills over time"),
-        @Option.AllowedValue(value = FIXED_RATE, description = "Requests are processed at a fixed rate")
-    })
-    Optional<String> rateLimitingAlgorithm();
+    @Option.Default("TOKEN_BUCKET")
+    ThroughputLimit.RateLimitingAlgorithmType rateLimitingAlgorithm();
 
     /**
      * Number of operations to allow during the relevant time window.
@@ -131,7 +127,7 @@ interface ThroughputLimitConfigBlueprint extends Prototype.Factory<ThroughputLim
     Optional<Supplier<Long>> clock();
 
     /**
-     * Whether to collect metrics for the AIMD implementation.
+     * Whether to collect metrics for the throughput limit implementation.
      *
      * @return metrics flag
      */

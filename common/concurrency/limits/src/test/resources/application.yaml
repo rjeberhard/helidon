@@ -33,6 +33,6 @@ second:
 third:
   concurrency-limit:
     throughput:
-      rate-limiting-algorithm: "token-bucket"
+      rate-limiting-algorithm: "TOKEN_BUCKET"
       amount: 500
       duration: "PT5S"

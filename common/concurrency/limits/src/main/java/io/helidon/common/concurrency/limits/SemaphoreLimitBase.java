@@ -148,6 +148,15 @@ abstract class SemaphoreLimitBase extends LimitAlgorithmDeprecatedBase implement
         }
     }
 
+    /**
+     * Updates the round-trip time (RTT) metric with the elapsed time between the specified start and end times.
+     * <p>
+     * The RTT is calculated as the difference between the end time and the start time. If the timer is not null,
+     * the RTT is recorded using the {@link Timer#record(long, TimeUnit)} method with the {@link TimeUnit#NANOSECONDS} unit.
+     *
+     * @param startTime the start time of the operation in nanoseconds
+     * @param endTime the end time of the operation in nanoseconds
+     */
     protected void updateMetrics(long startTime, long endTime) {
         long rtt = endTime - startTime;
         if (rttTimer != null) {
@@ -155,42 +164,117 @@ abstract class SemaphoreLimitBase extends LimitAlgorithmDeprecatedBase implement
         }
     }
 
+    /**
+     * Sets the {@link LimiterHandler} instance to be used by this semaphore-based limit.
+     * <p>
+     * The {@code LimiterHandler} is responsible for managing the underlying semaphore and providing
+     * a way to acquire tokens.
+     *
+     * @param handler the {@link LimiterHandler} instance to be used
+     */
     protected void setHandler(LimiterHandler handler) {
         this.handler = handler;
     }
 
+    /**
+     * Returns the initial number of permits set for this semaphore-based limit.
+     * <p>
+     * The initial number of permits is used to initialize the underlying semaphore.
+     *
+     * @return the initial number of permits
+     */
     protected int getInitialPermits() {
         return initialPermits;
     }
 
+    /**
+     * Sets the initial number of permits for this semaphore-based limit.
+     * <p>
+     * The initial number of permits is used to initialize the underlying semaphore.
+     *
+     * @param initialPermits the initial number of permits to be set
+     */
     protected void setInitialPermits(int initialPermits) {
         this.initialPermits = initialPermits;
     }
 
+    /**
+     * Returns the underlying semaphore instance associated with this semaphore-based limit.
+     * <p>
+     * Note that direct access to the semaphore may bypass the limit calculation and is not recommended.
+     * This method is provided for backward compatibility only and is deprecated for removal.
+     *
+     * @return the underlying semaphore instance
+     */
     protected Semaphore getSemaphore() {
         return semaphore;
     }
 
+    /**
+     * Sets the underlying semaphore instance associated with this semaphore-based limit.
+     * <p>
+     * The semaphore is used to manage the concurrency limit. It is recommended to use the
+     * {@link LimiterHandler} instance to acquire tokens instead of directly accessing the semaphore.
+     *
+     * @param semaphore the semaphore instance to be set
+     */
     protected void setSemaphore(Semaphore semaphore) {
         this.semaphore = semaphore;
     }
 
+    /**
+     * Returns the {@link AtomicInteger} instance tracking the current number of concurrent requests.
+     * <p>
+     * The returned {@code AtomicInteger} is used to maintain a count of the concurrent requests being processed.
+     *
+     * @return the {@link AtomicInteger} instance tracking concurrent requests
+     */
     protected AtomicInteger getConcurrentRequests() {
         return concurrentRequests;
     }
 
+    /**
+     * Returns the clock supplier used by this semaphore-based limit.
+     * <p>
+     * The clock supplier provides a way to obtain the current time in nanoseconds.
+     *
+     * @return the clock supplier
+     */
     protected Supplier<Long> getClock() {
         return clock;
     }
 
+    /**
+     * Returns the name associated with this semaphore-based limit.
+     * <p>
+     * The name is used to identify the limit and is typically used for metrics and monitoring purposes.
+     *
+     * @return the name of this semaphore-based limit
+     */
     protected String getName() {
         return name;
     }
 
+    /**
+     * Returns the current queue length associated with this semaphore-based limit.
+     * <p>
+     * The queue length represents the maximum number of requests that can be queued
+     * while waiting for a permit to be available.
+     *
+     * @return the current queue length
+     */
     protected int getQueueLength() {
         return queueLength;
     }
 
+    /**
+     * Sets the maximum number of requests that can be queued while waiting for a permit to be available.
+     * <p>
+     * The queue length determines the number of requests that can be buffered when the concurrency limit is reached.
+     * If the queue is full, subsequent requests will be rejected.
+     *
+     * @param queueLength the maximum number of requests to be queued
+     */
     protected void setQueueLength(int queueLength) {
         this.queueLength = queueLength;
     }
