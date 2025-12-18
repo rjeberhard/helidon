@@ -83,7 +83,7 @@ public class ConfiguredLimitTest {
 
         ThroughputLimitConfig prototype = ((ThroughputLimit) limit).prototype();
         assertThat("RateLimitingAlgorithm", prototype.rateLimitingAlgorithm(),
-            is(ThroughputLimit.RateLimitingAlgorithmType.TOKEN_BUCKET));
+            is(RateLimitingAlgorithmType.TOKEN_BUCKET));
         assertThat("Amount", prototype.amount(), is(500));
         assertThat("Duration", prototype.duration(), is(Duration.ofSeconds(5)));
     }

@@ -41,12 +41,12 @@ interface ThroughputLimitConfigBlueprint extends Prototype.Factory<ThroughputLim
     /**
      * The rate limiting algorithm to apply.
      *
-     * Rate limiting algorithm is by default {@link ThroughputLimit.RateLimitingAlgorithmType#TOKEN_BUCKET}.
+     * Rate limiting algorithm is by default {@link RateLimitingAlgorithmType#TOKEN_BUCKET}.
      * @return the rate limiting algorithm to be applied
      */
     @Option.Configured
     @Option.Default("TOKEN_BUCKET")
-    ThroughputLimit.RateLimitingAlgorithmType rateLimitingAlgorithm();
+    RateLimitingAlgorithmType rateLimitingAlgorithm();
 
     /**
      * Number of operations to allow during the relevant time window.
