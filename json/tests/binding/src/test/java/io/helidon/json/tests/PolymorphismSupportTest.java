@@ -16,12 +16,17 @@
 
 package io.helidon.json.tests;
 
+import java.io.ByteArrayInputStream;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import io.helidon.common.GenericType;
 import io.helidon.json.JsonException;
 import io.helidon.json.JsonGenerator;
+import io.helidon.json.JsonParser;
 import io.helidon.json.binding.Json;
 import io.helidon.json.binding.JsonBinding;
 import io.helidon.json.binding.JsonBindingException;
@@ -63,6 +68,106 @@ public class PolymorphismSupportTest {
 
     @ParameterizedTest
     @EnumSource(BindingMethod.class)
+    void testDiscriminatorInAnyPosition(BindingMethod bindingMethod) {
+        String fields = "\"name\":\"café\",\"metadata\":{\"kind\":\"nested\",\"number\":17},"
+                + "\"values\":[\"one\",\"two\"]";
+        for (String json : List.of("{\"kind\":\"sample\"," + fields + "}",
+                                   "{\"name\":\"café\",\"kind\":\"sample\","
+                                           + "\"metadata\":{\"kind\":\"nested\",\"number\":17},"
+                                           + "\"values\":[\"one\",\"two\"]}",
+                                   "{" + fields + ",\"kind\":\"sample\"}")) {
+            Sample sample = (Sample) bindingMethod.deserialize(jsonBinding, json, Payload.class);
+            assertThat(sample.name(), is("café"));
+            assertThat(sample.metadata().get("kind"), is("nested"));
+            assertThat(((Number) sample.metadata().get("number")).intValue(), is(17));
+            assertThat(sample.values(), is(List.of("one", "two")));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testLaterDiscriminatorRejectsInvalidInput(BindingMethod bindingMethod) {
+        for (String json : List.of("{\"name\":\"x\",\"kind\":null}",
+                                   "{\"name\":\"x\",\"kind\":17}",
+                                   "{\"name\":\"x\",\"kind\":\"unknown\"}",
+                                   "{\"name\":\"x\",\"extra\":true,\"kind\":\"sample\"}",
+                                   "{\"metadata\":{},\"kind\":\"sample\"}",
+                                   "{\"metadata\":{\"kind\":\"sample\"}}")) {
+            assertThrows(JsonException.class, () -> bindingMethod.deserialize(jsonBinding, json, Payload.class));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testLaterDiscriminatorWithDefaultSubtype(BindingMethod bindingMethod) {
+        Animal animal = bindingMethod.deserialize(jsonBinding, "{\"name\":\"Alik\",\"@type\":\"dog\"}", Animal.class);
+        assertThat(animal, instanceOf(Dog.class));
+        assertThat(((Dog) animal).name(), is("Alik"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testLaterInvalidDiscriminatorDoesNotUseDefaultSubtype(BindingMethod bindingMethod) {
+        for (String alias : List.of("null", "17", "\"unknown\"")) {
+            String json = "{\"name\":\"Alik\",\"@type\":" + alias + "}";
+            assertThrows(JsonException.class, () -> bindingMethod.deserialize(jsonBinding, json, Animal.class));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testLaterDiscriminatorWithManySubtypes(BindingMethod bindingMethod) {
+        ManyTypes value = bindingMethod.deserialize(jsonBinding,
+                                                    "{\"value\":\"test10\",\"@type\":\"type10\"}",
+                                                    ManyTypes.class);
+        assertThat(value, instanceOf(ManyType10.class));
+        assertThat(((ManyType10) value).value(), is("test10"));
+    }
+
+    @Test
+    void testLaterDiscriminatorWithJsonValueSmallStreamBufferAndSmile() {
+        String name = "café".repeat(2_000);
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("metadata", Map.of("kind", "nested", "number", 17));
+        fields.put("values", List.of("one", "two"));
+        fields.put("name", name);
+        fields.put("kind", "sample");
+        String json = jsonBinding.serialize(fields);
+
+        Sample fromValue = (Sample) jsonBinding.deserialize(JsonParser.create(json).readJsonObject(), Payload.class);
+        Sample fromStream = (Sample) jsonBinding.deserialize(
+                new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)), 7, Payload.class);
+        Sample fromSmile = (Sample) SmileBindingSupport.deserializeSmile(jsonBinding,
+                                                                        SmileBindingSupport.serializeSmile(jsonBinding, fields),
+                                                                        Payload.class);
+        for (Sample sample : List.of(fromValue, fromStream, fromSmile)) {
+            assertThat(sample.name(), is(name));
+            assertThat(sample.metadata().get("kind"), is("nested"));
+            assertThat(sample.values(), is(List.of("one", "two")));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testLaterDiscriminatorsInList(BindingMethod bindingMethod) {
+        List<Payload> values = bindingMethod.deserialize(jsonBinding,
+                                                         "[{\"name\":\"first\",\"kind\":\"sample\"},"
+                                                                 + "{\"name\":\"second\",\"kind\":\"sample\"}]",
+                                                         new GenericType<List<Payload>>() { });
+        assertThat(((Sample) values.get(0)).name(), is("first"));
+        assertThat(((Sample) values.get(1)).name(), is("second"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testDiscriminatorMetadataRejectsUnknownPropertyWithSameHash(BindingMethod bindingMethod) {
+        // "costarring" and "liquid" share an FNV-1a hash, but only the former is metadata.
+        String json = "{\"name\":\"example\",\"costarring\":\"sample\",\"liquid\":\"unknown\"}";
+        assertThrows(JsonException.class, () -> bindingMethod.deserialize(jsonBinding, json, CollisionPayload.class));
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
     void testCyclicSerialization(BindingMethod bindingMethod) {
         Fish fish = new Fish();
         fish.name("Nemo");
@@ -80,7 +185,6 @@ public class PolymorphismSupportTest {
     @ParameterizedTest
     @EnumSource(BindingMethod.class)
     void testPolymorphismMissingTypeNotFirstPropertyFallsBackToDefault(BindingMethod bindingMethod) {
-        // Current generated poly converter only considers @type if it is the first property.
         Animal deserialize = bindingMethod.deserialize(jsonBinding, "{\"name\":\"X\"}", Animal.class);
         assertThat(deserialize, instanceOf(Bird.class));
     }
@@ -151,11 +255,11 @@ public class PolymorphismSupportTest {
     @ParameterizedTest
     @EnumSource(BindingMethod.class)
     void testPolymorphismListOfAnimals(BindingMethod bindingMethod) {
-        String json = "[" +
-                "{\"@type\":\"dog\",\"name\":\"Alik\"}," +
-                "{\"@type\":\"cat\",\"color\":\"black\"}," +
-                "{}" +
-                "]";
+        String json = "["
+                + "{\"@type\":\"dog\",\"name\":\"Alik\"},"
+                + "{\"@type\":\"cat\",\"color\":\"black\"},"
+                + "{}"
+                + "]";
 
         List<Animal> animals = bindingMethod.deserialize(jsonBinding, json, new GenericType<List<Animal>>() { });
         assertThat(animals.get(0), instanceOf(Dog.class));
@@ -278,12 +382,12 @@ public class PolymorphismSupportTest {
     @ParameterizedTest
     @EnumSource(BindingMethod.class)
     void testPolymorphismSwitchStructureList(BindingMethod bindingMethod) {
-        String json = "[" +
-                "{\"@type\":\"type1\",\"value\":\"val1\"}," +
-                "{\"@type\":\"type5\",\"value\":\"val5\"}," +
-                "{\"@type\":\"type10\",\"value\":\"val10\"}," +
-                "{}" +
-                "]";
+        String json = "["
+                + "{\"@type\":\"type1\",\"value\":\"val1\"},"
+                + "{\"@type\":\"type5\",\"value\":\"val5\"},"
+                + "{\"@type\":\"type10\",\"value\":\"val10\"},"
+                + "{}"
+                + "]";
 
         List<ManyTypes> list = bindingMethod.deserialize(jsonBinding, json, new GenericType<List<ManyTypes>>() { });
         assertThat(list.get(0), instanceOf(ManyType1.class));
@@ -421,6 +525,18 @@ public class PolymorphismSupportTest {
         }
 
         assertThat(writer.toString(), is("[{\"@type\":\"a1\",\"data\":\"testA1\"}]"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testMultipleLevelPolymorphismWithReorderedDiscriminators(BindingMethod bindingMethod) {
+        for (String json : List.of("{\"nestedData\":\"value\",\"@type\":\"b\",\"@type2\":\"b1\"}",
+                                   "{\"@type2\":\"b1\",\"nestedData\":\"value\",\"@type\":\"b\"}",
+                                   "{\"nestedData\":\"value\",\"@type2\":\"b1\",\"@type\":\"b\"}")) {
+            InterfaceA value = bindingMethod.deserialize(jsonBinding, json, InterfaceA.class);
+            assertThat(value, instanceOf(ConcreteB1.class));
+            assertThat(((ConcreteB1) value).nestedData(), is("value"));
+        }
     }
 
     @ParameterizedTest
@@ -625,6 +741,18 @@ public class PolymorphismSupportTest {
     }
 
     @Json.Entity
+    @Json.Polymorphic(key = "kind")
+    @Json.Subtype(value = Sample.class, alias = "sample")
+    interface Payload {
+    }
+
+    @Json.Entity
+    @Json.Polymorphic(key = "costarring")
+    @Json.Subtype(value = Sample.class, alias = "sample")
+    interface CollisionPayload {
+    }
+
+    @Json.Entity
     @Json.Polymorphic(Bird.class)
     @Json.Subtype(Dog.class)
     @Json.Subtype(Cat.class)
@@ -687,6 +815,39 @@ public class PolymorphismSupportTest {
     }
 
     @Json.Entity
+    @Json.FailOnUnknown
+    static class Sample implements Payload, CollisionPayload {
+        @Json.Required
+        private String name;
+        private Map<String, Object> metadata;
+        private List<String> values;
+
+        public String name() {
+            return name;
+        }
+
+        public void name(String name) {
+            this.name = name;
+        }
+
+        public Map<String, Object> metadata() {
+            return metadata;
+        }
+
+        public void metadata(Map<String, Object> metadata) {
+            this.metadata = metadata;
+        }
+
+        public List<String> values() {
+            return values;
+        }
+
+        public void values(List<String> values) {
+            this.values = values;
+        }
+    }
+
+    @Json.Entity
     static class Dog implements Animal {
 
         private String name;
@@ -701,9 +862,9 @@ public class PolymorphismSupportTest {
 
         @Override
         public String toString() {
-            return "Dog{" +
-                    "name='" + name + '\'' +
-                    '}';
+            return "Dog{"
+                    + "name='" + name + '\''
+                    + '}';
         }
     }
 
