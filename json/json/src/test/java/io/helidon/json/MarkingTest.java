@@ -16,10 +16,13 @@
 
 package io.helidon.json;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
@@ -31,6 +34,33 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * Covers mark, resetToMark, and clearMark functionality.
  */
 class MarkingTest {
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 3, 64})
+    void testReplayLargeStringWithShortStreamReads(int chunkSize) {
+        String value = "café".repeat(2_000);
+        String json = "[0,\"" + value + "\",{\"value\":17}]";
+        ByteArrayInputStream input = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)) {
+            @Override
+            public int read(byte[] target, int offset, int length) {
+                return super.read(target, offset, Math.min(length, chunkSize));
+            }
+        };
+        JsonParser parser = JsonParser.create(input, 7);
+        assertThat(parser.nextToken(), is((byte) '0'));
+        assertThat(parser.readInt(), is(0));
+        assertThat(parser.nextToken(), is((byte) ','));
+        assertThat(parser.nextToken(), is((byte) '"'));
+        parser.mark();
+        parser.skip();
+        assertThat(parser.nextToken(), is((byte) ','));
+        parser.resetToMark();
+        assertThat(parser.readString(), is(value));
+        assertThat(parser.nextToken(), is((byte) ','));
+        assertThat(parser.nextToken(), is((byte) '{'));
+        assertThat(parser.readJsonObject().intValue("value").orElseThrow(), is(17));
+        assertThat(parser.nextToken(), is((byte) ']'));
+    }
 
     @ParameterizedTest
     @EnumSource(ParserMethod.class)

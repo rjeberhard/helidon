@@ -22,6 +22,7 @@ import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Base64;
 
 import io.helidon.common.buffers.BufferData;
@@ -2504,7 +2505,20 @@ final class JsonParserStream extends JsonParserBase {
     }
 
     private void jsonNumberBuffering() throws IOException {
-        if (replayMarked && mark > 0) {
+        if (replayMarked && mark == 0) {
+            // A later discriminator can require retaining a large object prefix for replay.
+            if (bufferLength == buffer.length) {
+                int newCap = (int) Math.min(Integer.MAX_VALUE, 2L * buffer.length);
+                buffer = Arrays.copyOf(buffer, newCap);
+            }
+            int lastRead = inputStream.read(buffer, bufferLength, buffer.length - bufferLength);
+            if (lastRead == -1) {
+                finished = true;
+            } else {
+                bufferLength += lastRead;
+                finished = false;
+            }
+        } else if (replayMarked && mark > 0) {
             // Move the partial value to the beginning of the buffer to make room for more data
             int valueLen = bufferLength - mark;
             int freed = mark;
