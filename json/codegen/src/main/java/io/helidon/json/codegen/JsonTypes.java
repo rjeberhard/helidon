@@ -50,6 +50,7 @@ final class JsonTypes {
     static final TypeName JSON_KEY = TypeName.create("io.helidon.json.JsonKey");
     static final TypeName BYTES = TypeName.create("io.helidon.common.buffers.Bytes");
     static final TypeName JSON_PARSER = TypeName.create("io.helidon.json.JsonParser");
+    static final TypeName JSON_PARSER_SUPPORT = TypeName.create("io.helidon.json.JsonParserSupport");
     static final TypeName OBJECT_START_PARSER = TypeName.create("io.helidon.json.ObjectStartParser");
 
     static final TypeName BUILDER_TYPE = TypeName.create("io.helidon.common.Builder");

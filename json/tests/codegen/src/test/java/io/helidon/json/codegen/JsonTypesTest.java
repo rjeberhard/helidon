@@ -29,6 +29,7 @@ import io.helidon.common.types.TypeName;
 import io.helidon.json.JsonGenerator;
 import io.helidon.json.JsonKey;
 import io.helidon.json.JsonParser;
+import io.helidon.json.JsonParserSupport;
 import io.helidon.json.ObjectStartParser;
 import io.helidon.json.binding.Json;
 import io.helidon.json.binding.JsonBindingConfigurator;
@@ -105,6 +106,7 @@ class JsonTypesTest {
         checkField(toCheck, checked, fields, "JSON_SERIALIZERS", Serializers.class);
         checkField(toCheck, checked, fields, "JSON_GENERATOR", JsonGenerator.class);
         checkField(toCheck, checked, fields, "JSON_PARSER", JsonParser.class);
+        checkField(toCheck, checked, fields, "JSON_PARSER_SUPPORT", JsonParserSupport.class);
         checkField(toCheck, checked, fields, "JSON_KEY", JsonKey.class);
         checkField(toCheck, checked, fields, "OBJECT_START_PARSER", ObjectStartParser.class);
 

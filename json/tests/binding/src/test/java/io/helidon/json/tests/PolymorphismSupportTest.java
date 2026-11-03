@@ -30,6 +30,7 @@ import io.helidon.json.JsonParser;
 import io.helidon.json.binding.Json;
 import io.helidon.json.binding.JsonBinding;
 import io.helidon.json.binding.JsonBindingException;
+import io.helidon.json.binding.JsonDeserializer;
 import io.helidon.testing.junit5.Testing;
 
 import org.junit.jupiter.api.Test;
@@ -225,6 +226,68 @@ public class PolymorphismSupportTest {
         // "costarring" and "liquid" share an FNV-1a hash, but only the former is metadata.
         String json = "{\"name\":\"example\",\"costarring\":\"sample\",\"liquid\":\"unknown\"}";
         assertThrows(JsonException.class, () -> bindingMethod.deserialize(jsonBinding, json, CollisionPayload.class));
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testDiscriminatorDoesNotPopulateSameNamedProperty(BindingMethod bindingMethod) {
+        for (String json : List.of("{\"kind\":\"field\",\"name\":\"Test\"}",
+                                   "{\"name\":\"Test\",\"kind\":\"field\"}")) {
+            assertThat(bindingMethod.deserialize(jsonBinding, json, FieldPayload.class),
+                       is(new DiscriminatorField(null, "Test")));
+        }
+        for (String json : List.of("{\"kind\":\"field\",\"name\":\"Test\",\"kind\":\"visible\"}",
+                                   "{\"name\":\"Test\",\"kind\":\"field\",\"kind\":\"visible\"}")) {
+            assertThat(bindingMethod.deserialize(jsonBinding, json, FieldPayload.class),
+                       is(new DiscriminatorField("visible", "Test")));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testStrictSubtypeStillRejectsDiscriminatorMetadata(BindingMethod bindingMethod) {
+        assertThrows(JsonException.class, () -> bindingMethod.deserialize(jsonBinding,
+                "{\"kind\":\"sample\",\"name\":\"Test\"}", Sample.class));
+        for (String json : List.of("{\"kind\":\"sample\",\"name\":\"Test\",\"kind\":null}",
+                                   "{\"name\":\"Test\",\"kind\":\"sample\",\"kind\":null}",
+                                   "{\"kind\":\"sample\",\"name\":\"Test\",\"costarring\":\"sample\"}")) {
+            assertThrows(JsonException.class, () -> bindingMethod.deserialize(jsonBinding, json, Payload.class));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
+    void testCustomSubtypeDeserializerDoesNotSeeDiscriminator(BindingMethod bindingMethod) {
+        JsonBinding customBinding = JsonBinding.builder().addDeserializer(new JsonDeserializer<Sample>() {
+            @Override
+            public GenericType<Sample> type() {
+                return GenericType.create(Sample.class);
+            }
+
+            @Override
+            public Sample deserialize(JsonParser parser) {
+                if (parser.currentByte() != '{' || parser.nextToken() != '"'
+                        || !parser.readString().equals("name") || parser.nextToken() != ':') {
+                    throw parser.createException("Expected name property");
+                }
+                parser.nextToken();
+                Sample sample = new Sample();
+                sample.name(parser.readString());
+                if (parser.nextToken() != '}') {
+                    throw parser.createException("Unknown property after name");
+                }
+                return sample;
+            }
+        }).build();
+        for (String json : List.of("{\"kind\":\"sample\",\"name\":\"Test\"}",
+                                   "{\"name\":\"Test\",\"kind\":\"sample\"}")) {
+            assertThat(((Sample) bindingMethod.deserialize(customBinding, json, Payload.class)).name(), is("Test"));
+            assertThat(((Sample) customBinding.deserialize(JsonParser.create(json).readJsonObject(), Payload.class)).name(),
+                       is("Test"));
+            Sample fromSmile = (Sample) SmileBindingSupport.deserializeSmile(customBinding,
+                    SmileBindingSupport.serializeSmile(jsonBinding, JsonParser.create(json).readJsonObject()), Payload.class);
+            assertThat(fromSmile.name(), is("Test"));
+        }
     }
 
     @ParameterizedTest
@@ -825,6 +888,16 @@ public class PolymorphismSupportTest {
     @Json.Subtype(value = Sample.class, alias = "sample")
     @Json.Subtype(value = ScalarSample.class, alias = "scalars")
     interface Payload {
+    }
+
+    @Json.Entity
+    @Json.Polymorphic(key = "kind")
+    @Json.Subtype(value = DiscriminatorField.class, alias = "field")
+    interface FieldPayload {
+    }
+
+    @Json.Entity
+    record DiscriminatorField(String kind, String name) implements FieldPayload {
     }
 
     @Json.Entity
