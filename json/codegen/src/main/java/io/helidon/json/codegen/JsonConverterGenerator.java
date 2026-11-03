@@ -222,6 +222,7 @@ class JsonConverterGenerator {
                 .addContentLine("throw parser.createException(\"Expected '{' to start an object\", lastByte);")
                 .addContentLine("}")
                 .addContentLine("parser.mark();")
+                .addContentLine("boolean firstProperty = true;")
                 .addContentLine("lastByte = parser.nextToken();")
                 .addContent("while (lastByte != ")
                 .addContent(BYTES)
@@ -251,22 +252,14 @@ class JsonConverterGenerator {
                 .addContentLine("switch (alias) {");
         for (Map.Entry<String, TypeName> alias : polymorphicInfo.aliases().entrySet()) {
             method.addContent("case ").addContentLiteral(alias.getKey()).addContentLine(" -> {");
-            addPolyDeserializerInvocation(classBuilder, method, toConfigure, alias.getValue(), createdDeserializers, true);
+            addPolyDeserializerInvocation(classBuilder, method, toConfigure, alias.getValue(), createdDeserializers, false);
             method.addContentLine("}");
         }
         method.addContentLine("default -> throw parser.createException(\"Unknown alias value: \" + alias);")
                 .addContentLine("}")
-                .addContentLine("}")
-                // JsonValue-backed parsers read scalar values without advancing to the next token.
-                .addContent("if (lastByte == ")
-                .addContent(BYTES)
-                .addContent(".BRACE_OPEN_BYTE || lastByte == ")
-                .addContent(BYTES)
-                .addContentLine(".SQUARE_BRACKET_OPEN_BYTE) {")
-                .addContentLine("parser.skip();")
-                .addContentLine("} else {")
-                .addContentLine("parser.readJsonValue();")
-                .addContentLine("}")
+                .addContentLine("}");
+        skipPolymorphicValue(method);
+        method.addContentLine("firstProperty = false;")
                 .addContentLine("lastByte = parser.nextToken();")
                 .addContent("if (lastByte == ")
                 .addContent(BYTES)
@@ -277,7 +270,8 @@ class JsonConverterGenerator {
                 .addContentLine(".BRACE_CLOSE_BYTE) {")
                 .addContentLine("throw parser.createException(\"Expected a key after ','\", lastByte);")
                 .addContentLine("}")
-                .addContent("} else if (lastByte != ")
+                .addContent("}")
+                .addContent(" else if (lastByte != ")
                 .addContent(BYTES)
                 .addContentLine(".BRACE_CLOSE_BYTE) {")
                 .addContentLine("throw parser.createException(\"Expected ',' or '}' as the next bytes\", lastByte);")
@@ -297,6 +291,20 @@ class JsonConverterGenerator {
             method.addContentLine("parser.clearMark();")
                     .addContentLine("throw parser.createException(\"Missing property containing alias\");");
         }
+    }
+
+    private static void skipPolymorphicValue(Method.Builder method) {
+        // JsonValue-backed parsers advance past scalars in skip(), unlike the streaming parsers.
+        method.addContent("if (parser.currentByte() == ")
+                .addContent(BYTES)
+                .addContent(".BRACE_OPEN_BYTE || parser.currentByte() == ")
+                .addContent(BYTES)
+                .addContentLine(".SQUARE_BRACKET_OPEN_BYTE) {")
+                .addContentLine("parser.skip();")
+                .addContent("}")
+                .addContentLine(" else {")
+                .addContentLine("parser.readJsonValue();")
+                .addContentLine("}");
     }
 
     private static void addPolyDeserializerInvocation(ClassBase.Builder<?, ?> classBuilder,
@@ -326,6 +334,22 @@ class JsonConverterGenerator {
             method.addContentLine("parser.resetToMark();");
             method.addContentLine("return " + fieldName + ".deserialize(parser);");
         } else {
+            method.addContentLine("if (!firstProperty) {")
+                    .addContentLine("parser.resetToMark();")
+                    .addContentLine("return " + fieldName + ".deserialize(parser);")
+                    .addContentLine("}")
+                    .addContentLine("parser.clearMark();")
+                    .addContentLine("lastByte = parser.nextToken();")
+                    .addContent("if (lastByte == ")
+                    .addContent(BYTES)
+                    .addContentLine(".COMMA_BYTE) {")
+                    .addContentLine("parser.nextToken();")
+                    .addContent("}")
+                    .addContent(" else if (lastByte != ")
+                    .addContent(BYTES)
+                    .addContentLine(".BRACE_CLOSE_BYTE) {")
+                    .addContentLine("throw parser.createException(\"Expected ',' or '}' as the next bytes\", lastByte);")
+                    .addContentLine("}");
             method.addContent("return " + fieldName + ".deserialize(")
                     .addContent(JsonTypes.OBJECT_START_PARSER)
                     .addContentLine(".create(parser));");
@@ -1073,7 +1097,7 @@ class JsonConverterGenerator {
                                         Map<String, TypeToConfigure> toConfigure) {
         if (jsonProperty.deserializationType().isEmpty()) {
             // Declared discriminator metadata has no corresponding Java property.
-            method.addContentLine("parser.readString();");
+            skipPolymorphicValue(method);
             return;
         }
         jsonProperty.deserializer()

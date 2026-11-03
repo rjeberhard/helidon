@@ -92,7 +92,11 @@ public class PolymorphismSupportTest {
                                    "{\"name\":\"x\",\"kind\":\"unknown\"}",
                                    "{\"name\":\"x\",\"extra\":true,\"kind\":\"sample\"}",
                                    "{\"metadata\":{},\"kind\":\"sample\"}",
-                                   "{\"metadata\":{\"kind\":\"sample\"}}")) {
+                                   "{\"metadata\":{\"kind\":\"sample\"}}",
+                                   "{\"name\" \"x\",\"kind\":\"sample\"}",
+                                   "{\"name\":\"x\" \"kind\":\"sample\"}",
+                                   "{\"name\":\"x\",}",
+                                   "{\"name\":\"x\",")) {
             assertThrows(JsonException.class, () -> bindingMethod.deserialize(jsonBinding, json, Payload.class));
         }
     }
@@ -255,11 +259,11 @@ public class PolymorphismSupportTest {
     @ParameterizedTest
     @EnumSource(BindingMethod.class)
     void testPolymorphismListOfAnimals(BindingMethod bindingMethod) {
-        String json = "["
-                + "{\"@type\":\"dog\",\"name\":\"Alik\"},"
-                + "{\"@type\":\"cat\",\"color\":\"black\"},"
-                + "{}"
-                + "]";
+        String json = "[" +
+                "{\"@type\":\"dog\",\"name\":\"Alik\"}," +
+                "{\"@type\":\"cat\",\"color\":\"black\"}," +
+                "{}" +
+                "]";
 
         List<Animal> animals = bindingMethod.deserialize(jsonBinding, json, new GenericType<List<Animal>>() { });
         assertThat(animals.get(0), instanceOf(Dog.class));
@@ -382,12 +386,12 @@ public class PolymorphismSupportTest {
     @ParameterizedTest
     @EnumSource(BindingMethod.class)
     void testPolymorphismSwitchStructureList(BindingMethod bindingMethod) {
-        String json = "["
-                + "{\"@type\":\"type1\",\"value\":\"val1\"},"
-                + "{\"@type\":\"type5\",\"value\":\"val5\"},"
-                + "{\"@type\":\"type10\",\"value\":\"val10\"},"
-                + "{}"
-                + "]";
+        String json = "[" +
+                "{\"@type\":\"type1\",\"value\":\"val1\"}," +
+                "{\"@type\":\"type5\",\"value\":\"val5\"}," +
+                "{\"@type\":\"type10\",\"value\":\"val10\"}," +
+                "{}" +
+                "]";
 
         List<ManyTypes> list = bindingMethod.deserialize(jsonBinding, json, new GenericType<List<ManyTypes>>() { });
         assertThat(list.get(0), instanceOf(ManyType1.class));
@@ -662,6 +666,19 @@ public class PolymorphismSupportTest {
 
     @ParameterizedTest
     @EnumSource(BindingMethod.class)
+    void testDuplicateDiscriminatorStillUsesFirstValue(BindingMethod bindingMethod) {
+        for (String duplicate : List.of("null", "17", "{}", "[]")) {
+            for (String json : List.of("{\"@type\":\"dog\",\"@type\":" + duplicate + ",\"name\":\"Test\"}",
+                                       "{\"name\":\"Test\",\"@type\":\"dog\",\"@type\":" + duplicate + "}")) {
+                Animal animal = bindingMethod.deserialize(jsonBinding, json, Animal.class);
+                assertThat(animal, instanceOf(Dog.class));
+                assertThat(((Dog) animal).name(), is("Test"));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(BindingMethod.class)
     void testPolymorphismWithHashCollisionAliases(BindingMethod bindingMethod) {
         // Test polymorphism with aliases that have conflicting FNV1a hashes
         // "costarring" and "liquid" both have FNV1a hash 0x89C62E45
@@ -862,9 +879,9 @@ public class PolymorphismSupportTest {
 
         @Override
         public String toString() {
-            return "Dog{"
-                    + "name='" + name + '\''
-                    + '}';
+            return "Dog{" +
+                    "name='" + name + '\'' +
+                    '}';
         }
     }
 
